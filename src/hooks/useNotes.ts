@@ -8,138 +8,155 @@ export interface Note {
   updatedAt: string;
 }
 
-export interface PropertyRating {
-  propertyId: number;
-  rating: number; // 1-5 stars
-  favorite: boolean;
-  status: 'interested' | 'visited' | 'applied' | 'rejected' | 'none';
+export interface PropertyStatus {
+  status: 'none' | 'interested' | 'visited' | 'applied' | 'passed';
 }
 
-const NOTES_KEY = 'okinoshima-house-notes';
-const RATINGS_KEY = 'okinoshima-house-ratings';
-
-function loadNotes(): Note[] {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadRatings(): PropertyRating[] {
-  try {
-    const raw = localStorage.getItem(RATINGS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
+const STORAGE_KEYS = {
+  notes: 'okinoshima-notes',
+  favorites: 'okinoshima-favorites',
+  ratings: 'okinoshima-ratings',
+  statuses: 'okinoshima-statuses',
+};
 
 export function useNotes() {
-  const [notes, setNotes] = useState<Note[]>(loadNotes);
-  const [ratings, setRatings] = useState<PropertyRating[]>(loadRatings);
+  // Notes state
+  const [notesMap, setNotesMap] = useState<Record<number, Note[]>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.notes);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Favorites state
+  const [favorites, setFavorites] = useState<Record<number, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.favorites);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Ratings state
+  const [ratings, setRatings] = useState<Record<number, number>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ratings);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Statuses state
+  const [statuses, setStatuses] = useState<Record<number, PropertyStatus['status']>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.statuses);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Save to localStorage when state changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.notes, JSON.stringify(notesMap));
+  }, [notesMap]);
 
   useEffect(() => {
-    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-  }, [notes]);
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favorites));
+  }, [favorites]);
 
   useEffect(() => {
-    localStorage.setItem(RATINGS_KEY, JSON.stringify(ratings));
+    localStorage.setItem(STORAGE_KEYS.ratings, JSON.stringify(ratings));
   }, [ratings]);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.statuses, JSON.stringify(statuses));
+  }, [statuses]);
+
+  // Note functions
   const addNote = useCallback((propertyId: number, text: string) => {
-    const now = new Date().toISOString();
-    const note: Note = {
-      id: crypto.randomUUID(),
+    const newNote: Note = {
+      id: `note-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       propertyId,
       text,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [note, ...prev]);
+    
+    setNotesMap(prev => ({
+      ...prev,
+      [propertyId]: [...(prev[propertyId] || []), newNote],
+    }));
   }, []);
 
-  const updateNote = useCallback((noteId: string, text: string) => {
-    setNotes((prev) =>
-      prev.map((n) =>
-        n.id === noteId ? { ...n, text, updatedAt: new Date().toISOString() } : n
-      )
-    );
+  const updateNote = useCallback((propertyId: number, noteId: string, text: string) => {
+    setNotesMap(prev => ({
+      ...prev,
+      [propertyId]: (prev[propertyId] || []).map(note =>
+        note.id === noteId
+          ? { ...note, text, updatedAt: new Date().toISOString() }
+          : note
+      ),
+    }));
   }, []);
 
-  const deleteNote = useCallback((noteId: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  const deleteNote = useCallback((propertyId: number, noteId: string) => {
+    setNotesMap(prev => ({
+      ...prev,
+      [propertyId]: (prev[propertyId] || []).filter(note => note.id !== noteId),
+    }));
   }, []);
 
-  const getNotesForProperty = useCallback(
-    (propertyId: number) => notes.filter((n) => n.propertyId === propertyId),
-    [notes]
-  );
+  const getNotesForProperty = useCallback((propertyId: number): Note[] => {
+    return notesMap[propertyId] || [];
+  }, [notesMap]);
 
-  const getRating = useCallback(
-    (propertyId: number): PropertyRating => {
-      return (
-        ratings.find((r) => r.propertyId === propertyId) || {
-          propertyId,
-          rating: 0,
-          favorite: false,
-          status: 'none',
-        }
-      );
-    },
-    [ratings]
-  );
-
-  const setRating = useCallback((propertyId: number, rating: number) => {
-    setRatings((prev) => {
-      const existing = prev.find((r) => r.propertyId === propertyId);
-      if (existing) {
-        return prev.map((r) =>
-          r.propertyId === propertyId ? { ...r, rating } : r
-        );
-      }
-      return [...prev, { propertyId, rating, favorite: false, status: 'none' as const }];
-    });
-  }, []);
-
+  // Favorite functions
   const toggleFavorite = useCallback((propertyId: number) => {
-    setRatings((prev) => {
-      const existing = prev.find((r) => r.propertyId === propertyId);
-      if (existing) {
-        return prev.map((r) =>
-          r.propertyId === propertyId ? { ...r, favorite: !r.favorite } : r
-        );
-      }
-      return [...prev, { propertyId, rating: 0, favorite: true, status: 'none' as const }];
-    });
+    setFavorites(prev => ({
+      ...prev,
+      [propertyId]: !prev[propertyId],
+    }));
   }, []);
 
-  const setStatus = useCallback(
-    (propertyId: number, status: PropertyRating['status']) => {
-      setRatings((prev) => {
-        const existing = prev.find((r) => r.propertyId === propertyId);
-        if (existing) {
-          return prev.map((r) =>
-            r.propertyId === propertyId ? { ...r, status } : r
-          );
-        }
-        return [...prev, { propertyId, rating: 0, favorite: false, status }];
-      });
-    },
-    []
-  );
+  // Rating functions
+  const setRating = useCallback((propertyId: number, rating: number) => {
+    setRatings(prev => ({
+      ...prev,
+      [propertyId]: rating,
+    }));
+  }, []);
+
+  // Status functions
+  const setStatus = useCallback((propertyId: number, status: PropertyStatus['status']) => {
+    setStatuses(prev => ({
+      ...prev,
+      [propertyId]: status,
+    }));
+  }, []);
 
   return {
-    notes,
+    // Notes
+    notesMap,
     addNote,
     updateNote,
     deleteNote,
     getNotesForProperty,
-    getRating,
-    setRating,
+    
+    // Favorites
+    favorites,
     toggleFavorite,
-    setStatus,
+    
+    // Ratings
     ratings,
+    setRating,
+    
+    // Statuses
+    statuses,
+    setStatus,
   };
 }

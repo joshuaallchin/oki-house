@@ -1,416 +1,375 @@
-import { useState, useMemo, useCallback } from 'react';
-import { properties } from './data/properties';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { properties, Property } from './data/properties';
 import { useNotes } from './hooks/useNotes';
+import { LanguageProvider, useLanguage, formatPrice } from './i18n';
 import MapView from './components/MapView';
 import PropertyCard from './components/PropertyCard';
 import PropertyDetail from './components/PropertyDetail';
 
 type ViewMode = 'split' | 'map' | 'list';
-type SortOption = 'price-asc' | 'price-desc' | 'id';
-type CategoryFilter = 'all' | '空き家' | '空き地';
+type SortOption = 'newest' | 'price-asc' | 'price-desc';
+type FilterType = 'all' | '空き家' | '空き地';
 
-function App() {
+function AppContent() {
+  const { t, language, setLanguage } = useLanguage();
   const [viewMode, setViewMode] = useState<ViewMode>('split');
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detailId, setDetailId] = useState<number | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [detailProperty, setDetailProperty] = useState<Property | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('price-asc');
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [showAvailableOnly, setShowAvailableOnly] = useState(false);
-  const [maxPrice, setMaxPrice] = useState<number>(2000);
-  const [showFilters, setShowFilters] = useState(false);
-
-  const {
-    addNote,
-    updateNote,
-    deleteNote,
+  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [sortOption, setSortOption] = useState<SortOption>('newest');
+  const [maxPrice, setMaxPrice] = useState(3000);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [mobileShowMap, setMobileShowMap] = useState(true);
+  
+  const { 
+    notesMap, 
+    addNote, 
+    updateNote, 
+    deleteNote, 
     getNotesForProperty,
-    getRating,
-    setRating,
+    favorites, 
     toggleFavorite,
-    setStatus,
     ratings,
+    setRating,
+    statuses,
+    setStatus,
   } = useNotes();
 
+  // Filter and sort properties
   const filteredProperties = useMemo(() => {
-    let result = [...properties];
-
-    // Search
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.listingId.toLowerCase().includes(q) ||
-          p.location.toLowerCase().includes(q) ||
-          p.district.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          p.price.includes(q)
-      );
-    }
-
-    // Category filter
-    if (categoryFilter !== 'all') {
-      result = result.filter((p) => p.category === categoryFilter);
-    }
-
-    // Favorites only
-    if (showFavoritesOnly) {
-      result = result.filter((p) => getRating(p.id).favorite);
-    }
-
-    // Available only
-    if (showAvailableOnly) {
-      result = result.filter((p) => !p.negotiating);
-    }
-
-    // Max price
-    result = result.filter((p) => p.priceNum <= maxPrice);
-
+    let result = properties.filter(p => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const searchableText = `${p.listingCode} ${p.location} ${p.district} ${p.description}`.toLowerCase();
+        if (!searchableText.includes(query)) return false;
+      }
+      
+      // Type filter - include 店舗付き with 空き家
+      if (filterType === '空き家' && p.type === '空き地') return false;
+      if (filterType === '空き地' && p.type !== '空き地') return false;
+      
+      // Max price filter (for sale properties only, not rentals)
+      if (p.transactionType === '売買' && p.priceMan > maxPrice) return false;
+      
+      // Favorites only
+      if (favoritesOnly && !favorites[p.id]) return false;
+      
+      // Available only
+      if (availableOnly && p.isNegotiating) return false;
+      
+      return true;
+    });
+    
     // Sort
-    switch (sortBy) {
-      case 'price-asc':
-        result.sort((a, b) => a.priceNum - b.priceNum);
-        break;
-      case 'price-desc':
-        result.sort((a, b) => b.priceNum - a.priceNum);
-        break;
-      case 'id':
-        result.sort((a, b) => a.id - b.id);
-        break;
-    }
-
+    result.sort((a, b) => {
+      switch (sortOption) {
+        case 'price-asc':
+          return a.priceMan - b.priceMan;
+        case 'price-desc':
+          return b.priceMan - a.priceMan;
+        case 'newest':
+        default:
+          return b.id - a.id;
+      }
+    });
+    
     return result;
-  }, [searchQuery, sortBy, categoryFilter, showFavoritesOnly, showAvailableOnly, maxPrice, getRating, ratings]);
+  }, [searchQuery, filterType, sortOption, maxPrice, favoritesOnly, availableOnly, favorites]);
 
-  const handleOpenDetail = useCallback((id: number) => {
-    setDetailId(id);
-    setSelectedId(id);
+  // Close detail when clicking outside on mobile
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDetailProperty(null);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
   }, []);
 
-  const detailProperty = detailId ? properties.find((p) => p.id === detailId) : null;
+  const clearFilters = () => {
+    setSearchQuery('');
+    setFilterType('all');
+    setSortOption('newest');
+    setMaxPrice(3000);
+    setFavoritesOnly(false);
+    setAvailableOnly(false);
+  };
 
-  const favCount = useMemo(
-    () => properties.filter((p) => getRating(p.id).favorite).length,
-    [getRating, ratings]
-  );
+  // Show property on map
+  const handleShowOnMap = useCallback((property: Property) => {
+    setSelectedProperty(property);
+    if (viewMode === 'list') {
+      setViewMode('split');
+    }
+    setMobileShowMap(true);
+  }, [viewMode]);
 
-  const availableCount = useMemo(
-    () => filteredProperties.filter((p) => !p.negotiating).length,
-    [filteredProperties]
-  );
+  // Open property detail
+  const handleOpenDetail = useCallback((property: Property) => {
+    setDetailProperty(property);
+  }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-2 flex-shrink-0 z-20">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-lg font-bold text-gray-800 whitespace-nowrap">
-              <span className="hidden sm:inline">🏠 隠岐の島 家探し</span>
-              <span className="sm:hidden">🏠 隠岐の島</span>
-            </h1>
-            <span className="hidden md:inline text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-              {filteredProperties.length} properties · {availableCount} available · {favCount} ❤️
-            </span>
-          </div>
-
-          {/* View mode toggle */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-white shadow text-gray-800 font-medium'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              📋
-            </button>
-            <button
-              onClick={() => setViewMode('split')}
-              className={`px-2.5 py-1 text-xs rounded-md transition-colors hidden sm:block ${
-                viewMode === 'split'
-                  ? 'bg-white shadow text-gray-800 font-medium'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              ⬜⬜
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                viewMode === 'map'
-                  ? 'bg-white shadow text-gray-800 font-medium'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              🗺️
-            </button>
-          </div>
-        </div>
-
-        {/* Search & Filters Row */}
-        <div className="flex items-center gap-2 mt-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search location, ID, etc..."
-              className="w-full text-sm border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300"
-            />
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-              🔍
-            </span>
-          </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-              showFilters
-                ? 'bg-blue-50 border-blue-300 text-blue-600'
-                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            ⚙️ <span className="hidden sm:inline">Filters</span>
-          </button>
-        </div>
-
-        {/* Expandable Filters */}
-        {showFilters && (
-          <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
-            <div className="flex flex-wrap gap-3">
-              {/* Category */}
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs text-gray-500">Type:</label>
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
-                  className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white"
-                >
-                  <option value="all">All</option>
-                  <option value="空き家">空き家 (House)</option>
-                  <option value="空き地">空き地 (Land)</option>
-                </select>
-              </div>
-
-              {/* Sort */}
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs text-gray-500">Sort:</label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white"
-                >
-                  <option value="price-asc">Price ↑</option>
-                  <option value="price-desc">Price ↓</option>
-                  <option value="id">Listing ID</option>
-                </select>
-              </div>
-
-              {/* Max Price */}
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs text-gray-500">Max:</label>
-                <input
-                  type="range"
-                  min={50}
-                  max={2000}
-                  step={50}
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(Number(e.target.value))}
-                  className="w-24"
-                />
-                <span className="text-xs text-gray-600 font-mono w-16">{maxPrice}万円</span>
-              </div>
+      <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg flex-shrink-0">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold">{t('appTitle')}</h1>
+              <p className="text-blue-100 text-xs sm:text-sm">{t('appSubtitle')}</p>
             </div>
-
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              {/* Language Toggle */}
               <button
-                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                  showFavoritesOnly
-                    ? 'bg-red-50 border-red-300 text-red-600'
-                    : 'bg-white border-gray-200 text-gray-500'
-                }`}
+                onClick={() => setLanguage(language === 'ja' ? 'en' : 'ja')}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition"
               >
-                ❤️ Favorites only
+                🌐 {language === 'ja' ? 'EN' : 'JP'}
               </button>
-              <button
-                onClick={() => setShowAvailableOnly(!showAvailableOnly)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-                  showAvailableOnly
-                    ? 'bg-green-50 border-green-300 text-green-600'
-                    : 'bg-white border-gray-200 text-gray-500'
-                }`}
-              >
-                🟢 Available only
-              </button>
-            </div>
-
-            {/* Legend */}
-            <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-200">
-              <span className="text-xs text-gray-400 flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> House
-              </span>
-              <span className="text-xs text-gray-400 flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Land
-              </span>
-              <span className="text-xs text-gray-400 flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Negotiating
-              </span>
-              <span className="text-xs text-gray-400 flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Favorited
-              </span>
+              
+              {/* View mode buttons */}
+              <div className="flex bg-white/20 rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('split')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition hidden sm:block ${
+                    viewMode === 'split' ? 'bg-white text-blue-600' : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  {t('splitView')}
+                </button>
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                    viewMode === 'map' ? 'bg-white text-blue-600' : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  {t('mapView')}
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                    viewMode === 'list' ? 'bg-white text-blue-600' : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  {t('listView')}
+                </button>
+              </div>
             </div>
           </div>
-        )}
-
-        {/* Mobile stats */}
-        <div className="sm:hidden flex items-center gap-2 mt-1.5">
-          <span className="text-xs text-gray-400">
-            {filteredProperties.length} results · {availableCount} available · {favCount} ❤️
-          </span>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex">
-        {/* Map */}
-        {(viewMode === 'map' || viewMode === 'split') && (
-          <div
-            className={`${
-              viewMode === 'split' ? 'hidden sm:block sm:w-1/2 lg:w-3/5' : 'w-full'
-            } relative`}
-          >
-            <MapView
-              properties={filteredProperties}
-              selectedId={selectedId}
-              onSelectProperty={handleOpenDetail}
-              getRating={getRating}
-            />
-            {/* Floating info when map is full */}
-            {viewMode === 'map' && selectedId && (
-              <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80">
-                {(() => {
-                  const p = properties.find((p) => p.id === selectedId);
-                  if (!p) return null;
-                  const r = getRating(p.id);
-                  return (
-                    <div
-                      className="bg-white rounded-xl shadow-2xl overflow-hidden cursor-pointer border border-gray-200"
-                      onClick={() => handleOpenDetail(p.id)}
-                    >
-                      <div className="flex">
-                        <img
-                          src={p.imageUrl}
-                          alt=""
-                          className="w-24 h-24 object-cover flex-shrink-0"
-                        />
-                        <div className="p-3 flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-sm text-gray-800">{p.listingId}</h3>
-                            {r.favorite && <span>❤️</span>}
-                          </div>
-                          <p className="text-lg font-bold text-gray-900">{p.price}</p>
-                          <p className="text-xs text-gray-500">
-                            📍 {p.location} · {p.layout || p.category}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* List */}
-        {(viewMode === 'list' || viewMode === 'split') && (
-          <div
-            className={`${
-              viewMode === 'split' ? 'w-full sm:w-1/2 lg:w-2/5' : 'w-full max-w-5xl mx-auto'
-            } overflow-y-auto p-3`}
-          >
-            {filteredProperties.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
-                <span className="text-4xl mb-2">🏚️</span>
-                <p className="text-sm">No properties match your filters</p>
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setCategoryFilter('all');
-                    setShowFavoritesOnly(false);
-                    setShowAvailableOnly(false);
-                    setMaxPrice(2000);
-                  }}
-                  className="mt-2 text-sm text-blue-500 hover:text-blue-700"
-                >
-                  Reset filters
-                </button>
-              </div>
-            ) : (
-              <div
-                className={`grid gap-3 ${
-                  viewMode === 'list'
-                    ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                    : 'grid-cols-1 lg:grid-cols-2'
-                }`}
-              >
-                {filteredProperties.map((property) => (
-                  <PropertyCard
-                    key={property.id}
-                    property={property}
-                    rating={getRating(property.id)}
-                    noteCount={getNotesForProperty(property.id).length}
-                    isSelected={property.id === selectedId}
-                    onClick={() => handleOpenDetail(property.id)}
-                    onToggleFavorite={() => toggleFavorite(property.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-
-      {/* Mobile Map/List Toggle - only when in split mode on mobile */}
-      {viewMode === 'split' && (
-        <div className="sm:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-10">
-          <div className="flex bg-white rounded-full shadow-lg border border-gray-200 p-1">
-            <button
-              onClick={() => setViewMode('list')}
-              className="px-4 py-2 text-sm rounded-full bg-blue-500 text-white"
+      {/* Filters */}
+      <div className="bg-white border-b shadow-sm flex-shrink-0">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Search */}
+            <div className="relative flex-grow max-w-xs">
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <span className="absolute left-2.5 top-2.5 text-gray-400">🔍</span>
+            </div>
+            
+            {/* Type filter */}
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value as FilterType)}
+              className="px-3 py-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500"
             >
-              📋 List
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className="px-4 py-2 text-sm rounded-full text-gray-600"
+              <option value="all">{t('allTypes')}</option>
+              <option value="空き家">{t('houses')}</option>
+              <option value="空き地">{t('land')}</option>
+            </select>
+            
+            {/* Sort */}
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value as SortOption)}
+              className="px-3 py-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500"
             >
-              🗺️ Map
+              <option value="newest">{t('sortNewest')}</option>
+              <option value="price-asc">{t('sortPriceAsc')}</option>
+              <option value="price-desc">{t('sortPriceDesc')}</option>
+            </select>
+            
+            {/* Max price slider */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-600 whitespace-nowrap">{t('maxPrice')}:</span>
+              <input
+                type="range"
+                min="50"
+                max="3000"
+                step="50"
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(parseInt(e.target.value))}
+                className="w-20 sm:w-32"
+              />
+              <span className="text-gray-800 font-medium whitespace-nowrap">
+                {formatPrice(maxPrice, language).split(' ')[0]}
+              </span>
+            </div>
+            
+            {/* Toggle filters */}
+            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={favoritesOnly}
+                onChange={(e) => setFavoritesOnly(e.target.checked)}
+                className="rounded text-blue-600 focus:ring-blue-500"
+              />
+              <span>❤️ {t('favoritesOnly')}</span>
+            </label>
+            
+            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={availableOnly}
+                onChange={(e) => setAvailableOnly(e.target.checked)}
+                className="rounded text-blue-600 focus:ring-blue-500"
+              />
+              <span>✓ {t('availableOnly')}</span>
+            </label>
+            
+            {/* Clear filters */}
+            <button
+              onClick={clearFilters}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition"
+            >
+              {t('clearFilters')}
             </button>
+          </div>
+          
+          {/* Results count */}
+          <div className="mt-2 text-sm text-gray-600">
+            {t('showing')} {filteredProperties.length} {t('of')} {properties.length} {t('properties')}
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Detail Modal */}
+      {/* Main content */}
+      <div className="flex-1 flex flex-col sm:flex-row min-h-0">
+        {/* Map view */}
+        {(viewMode === 'split' || viewMode === 'map') && (
+          <div className={`${
+            viewMode === 'split' ? 'sm:w-1/2' : 'w-full'
+          } ${
+            viewMode === 'split' && !mobileShowMap ? 'hidden sm:block' : ''
+          } h-[50vh] sm:h-full relative flex-shrink-0`}>
+            <MapView 
+              properties={filteredProperties}
+              selectedProperty={selectedProperty}
+              onSelectProperty={handleOpenDetail}
+              favorites={favorites}
+            />
+            
+            {/* Map Legend */}
+            <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur rounded-lg shadow-lg p-3 text-xs z-[400]">
+              <div className="font-medium mb-2">{t('mapLegend')}</div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                  <span>{t('legendHouse')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                  <span>{t('legendLand')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                  <span>{t('legendNegotiating')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                  <span>{t('legendFavorite')}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Mobile toggle for split view */}
+            {viewMode === 'split' && (
+              <button
+                onClick={() => setMobileShowMap(!mobileShowMap)}
+                className="sm:hidden absolute top-4 right-4 bg-white shadow-lg rounded-lg px-3 py-2 text-sm font-medium z-[400]"
+              >
+                {mobileShowMap ? `📋 ${t('listView')}` : `🗺️ ${t('mapView')}`}
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* List view */}
+        {(viewMode === 'split' || viewMode === 'list') && (
+          <div className={`${
+            viewMode === 'split' ? 'sm:w-1/2' : 'w-full'
+          } ${
+            viewMode === 'split' && mobileShowMap ? 'hidden sm:block' : ''
+          } flex-1 overflow-y-auto bg-gray-50`}>
+            <div className={`p-4 grid gap-4 ${
+              viewMode === 'list' ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'
+            }`}>
+              {filteredProperties.map(property => (
+                <PropertyCard
+                  key={property.id}
+                  property={property}
+                  onClick={() => handleOpenDetail(property)}
+                  onShowOnMap={() => handleShowOnMap(property)}
+                  isSelected={selectedProperty?.id === property.id}
+                  isFavorite={!!favorites[property.id]}
+                  rating={ratings[property.id] || 0}
+                  noteCount={notesMap[property.id]?.length || 0}
+                />
+              ))}
+              
+              {filteredProperties.length === 0 && (
+                <div className="col-span-full text-center py-12 text-gray-500">
+                  <div className="text-4xl mb-2">🏠</div>
+                  <p>{language === 'ja' ? '条件に合う物件が見つかりませんでした' : 'No properties match your filters'}</p>
+                  <button
+                    onClick={clearFilters}
+                    className="mt-2 text-blue-600 hover:underline"
+                  >
+                    {t('clearFilters')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Property detail modal */}
       {detailProperty && (
         <PropertyDetail
           property={detailProperty}
-          rating={getRating(detailProperty.id)}
+          onClose={() => setDetailProperty(null)}
+          rating={ratings[detailProperty.id] || 0}
           notes={getNotesForProperty(detailProperty.id)}
-          onClose={() => setDetailId(null)}
-          onAddNote={addNote}
-          onUpdateNote={updateNote}
-          onDeleteNote={deleteNote}
-          onSetRating={setRating}
-          onToggleFavorite={toggleFavorite}
-          onSetStatus={setStatus}
+          onAddNote={(text) => addNote(detailProperty.id, text)}
+          onUpdateNote={(noteId, text) => updateNote(detailProperty.id, noteId, text)}
+          onDeleteNote={(noteId) => deleteNote(detailProperty.id, noteId)}
+          isFavorite={!!favorites[detailProperty.id]}
+          onToggleFavorite={() => toggleFavorite(detailProperty.id)}
+          onSetRating={(r) => setRating(detailProperty.id, r)}
+          status={statuses[detailProperty.id] || 'none'}
+          onSetStatus={(s) => setStatus(detailProperty.id, s)}
         />
       )}
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
+  );
+}

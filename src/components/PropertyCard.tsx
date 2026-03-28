@@ -1,139 +1,141 @@
 import { Property } from '../data/properties';
-import { PropertyRating } from '../hooks/useNotes';
+import { useLanguage, formatPrice } from '../i18n';
 
 interface Props {
   property: Property;
-  rating: PropertyRating;
-  noteCount: number;
-  isSelected: boolean;
   onClick: () => void;
-  onToggleFavorite: () => void;
+  onShowOnMap?: () => void;
+  isSelected: boolean;
+  isFavorite: boolean;
+  rating: number;
+  noteCount: number;
 }
 
-const statusColors: Record<string, string> = {
-  interested: 'bg-blue-100 text-blue-700',
-  visited: 'bg-purple-100 text-purple-700',
-  applied: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  none: '',
-};
-
-const statusLabels: Record<string, string> = {
-  interested: '🔍 Interested',
-  visited: '👀 Visited',
-  applied: '📝 Applied',
-  rejected: '❌ Passed',
-  none: '',
-};
-
-export default function PropertyCard({
-  property,
+export default function PropertyCard({ 
+  property, 
+  onClick, 
+  onShowOnMap,
+  isSelected,
+  isFavorite,
   rating,
   noteCount,
-  isSelected,
-  onClick,
-  onToggleFavorite,
 }: Props) {
+  const { language, t, translateLocation, translateDistrict } = useLanguage();
+  
+  const priceText = formatPrice(property.priceMan, language);
+  const isShop = property.type === '空き家・店舗付き';
+  const isLand = property.type === '空き地';
+
   return (
     <div
       onClick={onClick}
-      className={`relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-200 hover:shadow-lg ${
-        isSelected
-          ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
-          : 'border-gray-200 hover:border-gray-300'
+      className={`bg-white rounded-lg shadow-md overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+        isSelected ? 'ring-2 ring-blue-500 shadow-lg' : ''
       }`}
     >
-      {/* Image */}
-      <div className="relative h-36 sm:h-40 overflow-hidden bg-gray-100">
+      {/* Property Image */}
+      <div className="relative h-36 bg-gray-200">
         <img
           src={property.imageUrl}
-          alt={property.listingId}
+          alt={`${property.listingCode} - ${property.location}`}
           className="w-full h-full object-cover"
-          loading="lazy"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150"><rect fill="%23e5e7eb" width="200" height="150"/><text fill="%239ca3af" x="50%" y="50%" text-anchor="middle" dy=".3em" font-size="14">No Image</text></svg>';
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            target.parentElement!.style.background = isLand
+              ? 'linear-gradient(135deg, #bbf7d0, #86efac)'
+              : 'linear-gradient(135deg, #bfdbfe, #93c5fd)';
           }}
         />
+        
+        {/* Price badge */}
+        <div className="absolute top-2 left-2 bg-blue-600 text-white px-2 py-1 rounded text-sm font-bold shadow">
+          {priceText}
+        </div>
+        
         {/* Badges */}
-        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
-          {property.negotiating && (
-            <span className="px-2 py-0.5 bg-amber-500 text-white text-xs font-bold rounded-full shadow">
-              商談中
+        <div className="absolute top-2 right-2 flex flex-col gap-1">
+          {property.isNegotiating && (
+            <span className="bg-amber-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+              {t('underNegotiation')}
             </span>
           )}
-          <span
-            className={`px-2 py-0.5 text-xs font-bold rounded-full shadow ${
-              property.category === '空き地'
-                ? 'bg-emerald-500 text-white'
-                : 'bg-blue-500 text-white'
-            }`}
-          >
-            {property.category}
-          </span>
-        </div>
-        {/* Favorite */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite();
-          }}
-          className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-white/90 rounded-full shadow hover:scale-110 transition-transform"
-        >
-          {rating.favorite ? (
-            <span className="text-red-500 text-lg">❤️</span>
-          ) : (
-            <span className="text-gray-400 text-lg">🤍</span>
-          )}
-        </button>
-        {/* Price overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
-          <p className="text-white font-bold text-lg">{property.price}</p>
-        </div>
-      </div>
-
-      {/* Details */}
-      <div className="p-3">
-        <div className="flex items-start justify-between mb-1">
-          <h3 className="font-bold text-sm text-gray-800">{property.listingId}</h3>
-          {rating.status !== 'none' && (
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[rating.status]}`}
-            >
-              {statusLabels[rating.status]}
+          {isShop && (
+            <span className="bg-purple-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+              {t('withShop')}
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-500 mb-1">
-          📍 {property.location}（{property.district}）
-        </p>
-        {property.layout && (
-          <p className="text-xs text-gray-600 mb-1">
-            🏠 {property.layout}
-          </p>
-        )}
-        <p className="text-xs text-gray-500 line-clamp-2">{property.description}</p>
-
-        {/* Bottom row */}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-          {/* Stars */}
-          <div className="flex gap-0.5">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <span
-                key={star}
-                className={`text-xs ${
-                  star <= rating.rating ? 'text-yellow-400' : 'text-gray-300'
-                }`}
-              >
-                ★
-              </span>
-            ))}
+        
+        {/* Favorite indicator */}
+        {isFavorite && (
+          <div className="absolute bottom-2 right-2 text-2xl drop-shadow">
+            ❤️
           </div>
-          {noteCount > 0 && (
-            <span className="text-xs text-gray-400">
-              📝 {noteCount} note{noteCount !== 1 ? 's' : ''}
+        )}
+        
+        {/* Notes count */}
+        {noteCount > 0 && (
+          <div className="absolute bottom-2 left-2 bg-white/90 text-gray-700 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1">
+            📝 {noteCount}
+          </div>
+        )}
+      </div>
+      
+      {/* Content */}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-xs text-gray-500 font-medium">{property.listingCode}</div>
+            <div className="font-medium text-gray-900">
+              {translateLocation(property.location)}
+            </div>
+            <div className="text-sm text-gray-600">
+              {translateDistrict(property.district)}
+            </div>
+          </div>
+          
+          <div className="text-right">
+            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+              isLand
+                ? 'bg-green-100 text-green-700'
+                : isShop
+                ? 'bg-purple-100 text-purple-700'
+                : 'bg-blue-100 text-blue-700'
+            }`}>
+              {isLand ? t('vacantLand') : isShop ? t('withShop') : t('house')}
             </span>
-          )}
+          </div>
         </div>
+        
+        {property.layout && (
+          <div className="mt-2 text-sm text-gray-600">
+            {t('layout')}: {property.layout}
+          </div>
+        )}
+        
+        {property.landArea && (
+          <div className="mt-2 text-sm text-gray-600">
+            {t('landArea')}: {property.landArea}
+          </div>
+        )}
+
+        {/* Rating */}
+        {rating > 0 && (
+          <div className="mt-2 text-amber-500 text-sm">
+            {'★'.repeat(rating)}{'☆'.repeat(5 - rating)}
+          </div>
+        )}
+        
+        {/* Show on Map button */}
+        {onShowOnMap && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onShowOnMap(); }}
+            className="mt-2 w-full text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-2 rounded transition-colors"
+          >
+            📍 {t('showOnMap')}
+          </button>
+        )}
       </div>
     </div>
   );

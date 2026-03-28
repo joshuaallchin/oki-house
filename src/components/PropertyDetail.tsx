@@ -1,304 +1,343 @@
 import { useState } from 'react';
-import { Property } from '../data/properties';
-import { Note, PropertyRating } from '../hooks/useNotes';
+import { Property, getDetailUrl } from '../data/properties';
+import { Note } from '../hooks/useNotes';
+import { useLanguage, formatPrice } from '../i18n';
 
 interface Props {
   property: Property;
-  rating: PropertyRating;
-  notes: Note[];
   onClose: () => void;
-  onAddNote: (propertyId: number, text: string) => void;
+  rating: number;
+  notes: Note[];
+  onAddNote: (text: string) => void;
   onUpdateNote: (noteId: string, text: string) => void;
   onDeleteNote: (noteId: string) => void;
-  onSetRating: (propertyId: number, rating: number) => void;
-  onToggleFavorite: (propertyId: number) => void;
-  onSetStatus: (propertyId: number, status: PropertyRating['status']) => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  onSetRating: (rating: number) => void;
+  status: 'none' | 'interested' | 'visited' | 'applied' | 'passed';
+  onSetStatus: (status: 'none' | 'interested' | 'visited' | 'applied' | 'passed') => void;
 }
-
-const statusOptions: { value: PropertyRating['status']; label: string; emoji: string }[] = [
-  { value: 'none', label: 'No status', emoji: '⚪' },
-  { value: 'interested', label: 'Interested', emoji: '🔍' },
-  { value: 'visited', label: 'Visited', emoji: '👀' },
-  { value: 'applied', label: 'Applied', emoji: '📝' },
-  { value: 'rejected', label: 'Passed', emoji: '❌' },
-];
 
 export default function PropertyDetail({
   property,
+  onClose,
   rating,
   notes,
-  onClose,
   onAddNote,
   onUpdateNote,
   onDeleteNote,
-  onSetRating,
+  isFavorite,
   onToggleFavorite,
+  onSetRating,
+  status,
   onSetStatus,
 }: Props) {
+  const { language, t, translateLocation, translateDistrict, translateDesc } = useLanguage();
   const [newNote, setNewNote] = useState('');
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
+  const priceText = formatPrice(property.priceMan, language);
+  const isShop = property.type === '空き家・店舗付き';
+  const isLand = property.type === '空き地';
+  const detailUrl = getDetailUrl(property.id);
+  // PDF URL is directly stored in the property data
+  const pdfUrl = property.pdfUrl;
+
   const handleAddNote = () => {
-    if (!newNote.trim()) return;
-    onAddNote(property.id, newNote.trim());
-    setNewNote('');
+    if (newNote.trim()) {
+      onAddNote(newNote.trim());
+      setNewNote('');
+    }
   };
 
-  const handleSaveEdit = (noteId: string) => {
-    if (!editText.trim()) return;
-    onUpdateNote(noteId, editText.trim());
-    setEditingNoteId(null);
-    setEditText('');
+  const handleUpdateNote = (noteId: string) => {
+    if (editText.trim()) {
+      onUpdateNote(noteId, editText.trim());
+      setEditingNote(null);
+      setEditText('');
+    }
   };
+
+  const statusOptions = [
+    { value: 'none', label: t('statusNone'), color: 'gray' },
+    { value: 'interested', label: t('statusInterested'), color: 'blue' },
+    { value: 'visited', label: t('statusVisited'), color: 'purple' },
+    { value: 'applied', label: t('statusApplied'), color: 'green' },
+    { value: 'passed', label: t('statusPassed'), color: 'red' },
+  ] as const;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div className="relative bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-        {/* Header Image */}
-        <div className="relative h-48 sm:h-56 flex-shrink-0">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[1000]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div 
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header image area */}
+        <div className="relative h-56 bg-gray-200">
           <img
             src={property.imageUrl}
-            alt={property.listingId}
+            alt={`${property.listingCode} - ${property.location}`}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              target.parentElement!.style.background = isLand
+                ? 'linear-gradient(135deg, #bbf7d0, #4ade80)'
+                : 'linear-gradient(135deg, #bfdbfe, #60a5fa)';
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          
+          {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center text-gray-600 hover:bg-white shadow-lg"
+            className="absolute top-3 right-3 w-10 h-10 bg-white/90 hover:bg-white rounded-full flex items-center justify-center text-gray-600 hover:text-gray-900 transition shadow-lg"
           >
             ✕
           </button>
-          <div className="absolute bottom-3 left-4 right-4">
-            <div className="flex items-end justify-between">
-              <div>
-                <h2 className="text-white text-xl font-bold">{property.listingId}</h2>
-                <p className="text-white/90 text-sm">
-                  📍 {property.location}（{property.district}）
-                </p>
-              </div>
-              <p className="text-white font-bold text-2xl">{property.price}</p>
-            </div>
+          
+          {/* Badges */}
+          <div className="absolute top-3 left-3 flex gap-2">
+            {property.isNegotiating && (
+              <span className="bg-amber-500 text-white px-3 py-1 rounded-full text-sm font-medium shadow">
+                {t('underNegotiation')}
+              </span>
+            )}
+            {isShop && (
+              <span className="bg-purple-500 text-white px-3 py-1 rounded-full text-sm font-medium shadow">
+                {t('withShop')}
+              </span>
+            )}
           </div>
-          {property.negotiating && (
-            <span className="absolute top-3 left-3 px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
-              商談中
-            </span>
-          )}
+          
+          {/* Price and location overlay */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-white">
+            <div className="text-2xl font-bold">{priceText}</div>
+            <div className="text-lg">{translateLocation(property.location)}, {translateDistrict(property.district)}</div>
+            <div className="text-sm opacity-80">{property.listingCode}</div>
+          </div>
         </div>
-
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Quick Actions */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              {/* Star Rating */}
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-500 mr-1">Rating:</span>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => onSetRating(property.id, star === rating.rating ? 0 : star)}
-                    className={`text-xl transition-transform hover:scale-125 ${
-                      star <= rating.rating ? 'text-yellow-400' : 'text-gray-300'
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
-              {/* Favorite */}
-              <button
-                onClick={() => onToggleFavorite(property.id)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full border transition-colors text-sm font-medium"
-                style={{
-                  borderColor: rating.favorite ? '#f43f5e' : '#d1d5db',
-                  background: rating.favorite ? '#fff1f2' : 'white',
-                  color: rating.favorite ? '#e11d48' : '#6b7280',
-                }}
-              >
-                {rating.favorite ? '❤️ Favorited' : '🤍 Favorite'}
-              </button>
-            </div>
-            {/* Status */}
-            <div className="flex flex-wrap gap-1.5">
-              {statusOptions.map((opt) => (
+        
+        {/* Content */}
+        <div className="p-6">
+          {/* Actions row */}
+          <div className="flex flex-wrap items-center gap-4 mb-6 pb-4 border-b">
+            {/* Favorite */}
+            <button
+              onClick={onToggleFavorite}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full transition ${
+                isFavorite 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {isFavorite ? '❤️' : '🤍'} {isFavorite ? t('removeFromFavorites') : t('addToFavorites')}
+            </button>
+            
+            {/* Rating */}
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((star) => (
                 <button
-                  key={opt.value}
-                  onClick={() => onSetStatus(property.id, opt.value)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                    rating.status === opt.value
-                      ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold'
-                      : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                  }`}
+                  key={star}
+                  onClick={() => onSetRating(star === rating ? 0 : star)}
+                  className="text-2xl hover:scale-110 transition"
                 >
-                  {opt.emoji} {opt.label}
+                  {star <= rating ? '★' : '☆'}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Property Info */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-800 text-sm mb-2">Property Details</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-gray-400 text-xs">Type</p>
-                <p className="font-medium text-gray-700">{property.category}</p>
-              </div>
-              {property.layout && (
-                <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-gray-400 text-xs">Layout</p>
-                  <p className="font-medium text-gray-700">{property.layout}</p>
-                </div>
-              )}
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-gray-400 text-xs">Transaction</p>
-                <p className="font-medium text-gray-700">{property.type}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-gray-400 text-xs">Status</p>
-                <p className="font-medium text-gray-700">
-                  {property.negotiating ? '🟡 商談中' : '🟢 Available'}
-                </p>
+          
+          {/* Status selector */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">{t('status')}</h3>
+            <div className="flex flex-wrap gap-2">
+              {statusOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => onSetStatus(option.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                    status === option.value
+                      ? option.color === 'gray' ? 'bg-gray-600 text-white'
+                        : option.color === 'blue' ? 'bg-blue-600 text-white'
+                        : option.color === 'purple' ? 'bg-purple-600 text-white'
+                        : option.color === 'green' ? 'bg-green-600 text-white'
+                        : 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Property details grid */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500 mb-1">{t('propertyType')}</div>
+              <div className="font-medium">
+                {isLand ? t('vacantLand') : isShop ? t('withShop') : t('house')}
               </div>
             </div>
-            <p className="text-sm text-gray-600 mt-3 bg-blue-50 rounded-lg p-2.5">
-              💡 {property.description}
+            {property.layout && (
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-1">{t('layout')}</div>
+                <div className="font-medium">{property.layout}</div>
+              </div>
+            )}
+            {property.landArea && (
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-1">{language === 'en' ? 'Land Area' : '土地面積'}</div>
+                <div className="font-medium text-sm">{property.landArea}</div>
+              </div>
+            )}
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500 mb-1">{t('transactionType')}</div>
+              <div className="font-medium">{property.transactionType === '売買' ? t('sale') : t('rent')}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-xs text-gray-500 mb-1">{t('availability')}</div>
+              <div className={`font-medium ${property.isNegotiating ? 'text-amber-600' : 'text-green-600'}`}>
+                {property.isNegotiating ? t('negotiating') : t('available')}
+              </div>
+            </div>
+          </div>
+          
+          {/* Description */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">{t('description')}</h3>
+            <p className="text-gray-600 bg-gray-50 rounded-lg p-3">
+              {translateDesc(property.description)}
             </p>
           </div>
-
+          
           {/* Contact */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-800 text-sm mb-2">Contact</h3>
-            <p className="text-sm text-gray-600">{property.contact}</p>
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">{t('contact')}</h3>
+            <p className="text-gray-600 bg-blue-50 rounded-lg p-3 border border-blue-100">
+              📞 {property.contact}
+            </p>
           </div>
-
-          {/* Links */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-800 text-sm mb-2">Links</h3>
-            <div className="flex flex-wrap gap-2">
-              <a
-                href={property.detailUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg"
-              >
-                🌐 Official Page
-              </a>
-              {property.pdfUrl && (
-                <a
-                  href={property.pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-800 bg-red-50 px-3 py-1.5 rounded-lg"
-                >
-                  📄 PDF Details
-                </a>
-              )}
-            </div>
+          
+          {/* External links */}
+          <div className="flex flex-wrap gap-3 mb-6 pb-6 border-b">
+            <a
+              href={detailUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              🔗 {t('viewOnSite')}
+            </a>
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+            >
+              📄 {t('viewPDF')}
+            </a>
           </div>
-
-          {/* Notes */}
-          <div className="px-4 py-3">
-            <h3 className="font-semibold text-gray-800 text-sm mb-3">
-              📝 Notes ({notes.length})
+          
+          {/* Notes section */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center gap-2">
+              📝 {t('notes')}
+              <span className="text-sm font-normal text-gray-500">({notes.length})</span>
             </h3>
-
-            {/* Add note */}
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
+            
+            {/* Add new note */}
+            <div className="mb-4">
+              <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
-                placeholder="Add a note..."
-                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300"
+                placeholder={t('notePlaceholder')}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                rows={2}
               />
               <button
                 onClick={handleAddNote}
                 disabled={!newNote.trim()}
-                className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
-                Add
+                {t('addNote')}
               </button>
             </div>
-
+            
             {/* Notes list */}
-            <div className="space-y-2">
-              {notes.map((note) => (
-                <div
-                  key={note.id}
-                  className="bg-yellow-50 border border-yellow-200 rounded-lg p-3"
-                >
-                  {editingNoteId === note.id ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={editText}
-                        onChange={(e) => setEditText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(note.id)}
-                        className="flex-1 text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleSaveEdit(note.id)}
-                        className="text-xs text-green-600 hover:text-green-800 font-medium"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingNoteId(null)}
-                        className="text-xs text-gray-400 hover:text-gray-600"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm text-gray-700">{note.text}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-xs text-gray-400">
-                          {new Date(note.updatedAt).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                        <div className="flex gap-2">
+            <div className="space-y-3">
+              {notes.length === 0 ? (
+                <p className="text-gray-500 text-sm italic">{t('noNotes')}</p>
+              ) : (
+                notes.map(note => (
+                  <div key={note.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    {editingNote === note.id ? (
+                      <div>
+                        <textarea
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          className="w-full px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500 resize-none"
+                          rows={2}
+                        />
+                        <div className="flex gap-2 mt-2">
                           <button
-                            onClick={() => {
-                              setEditingNoteId(note.id);
-                              setEditText(note.text);
-                            }}
-                            className="text-xs text-blue-500 hover:text-blue-700"
+                            onClick={() => handleUpdateNote(note.id)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
                           >
-                            Edit
+                            {t('save')}
                           </button>
                           <button
-                            onClick={() => onDeleteNote(note.id)}
-                            className="text-xs text-red-400 hover:text-red-600"
+                            onClick={() => {
+                              setEditingNote(null);
+                              setEditText('');
+                            }}
+                            className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
                           >
-                            Delete
+                            {t('cancel')}
                           </button>
                         </div>
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              {notes.length === 0 && (
-                <p className="text-center text-sm text-gray-400 py-4">
-                  No notes yet. Add one above!
-                </p>
+                    ) : (
+                      <>
+                        <p className="text-gray-800 whitespace-pre-wrap">{note.text}</p>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-yellow-200">
+                          <span className="text-xs text-gray-500">
+                            {new Date(note.updatedAt).toLocaleDateString(language === 'ja' ? 'ja-JP' : 'en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingNote(note.id);
+                                setEditText(note.text);
+                              }}
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => onDeleteNote(note.id)}
+                              className="text-sm text-red-600 hover:underline"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
               )}
             </div>
           </div>

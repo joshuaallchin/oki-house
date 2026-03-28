@@ -2,115 +2,119 @@ import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Property } from '../data/properties';
-import { PropertyRating } from '../hooks/useNotes';
+import { useLanguage, formatPrice } from '../i18n';
 
-interface MapViewProps {
+interface Props {
   properties: Property[];
-  selectedId: number | null;
-  onSelectProperty: (id: number) => void;
-  getRating: (id: number) => PropertyRating;
+  selectedProperty: Property | null;
+  onSelectProperty: (property: Property) => void;
+  favorites: Record<number, boolean>;
 }
 
-export default function MapView({ properties, selectedId, onSelectProperty, getRating }: MapViewProps) {
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<number, L.Marker>>(new Map());
-  const containerRef = useRef<HTMLDivElement>(null);
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
+
+export default function MapView({ properties, selectedProperty, onSelectProperty, favorites }: Props) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<L.CircleMarker[]>([]);
+  const { language, translateLocation } = useLanguage();
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!mapRef.current || leafletMapRef.current) return;
 
-    const map = L.map(containerRef.current, {
-      center: [36.21, 133.31],
+    const map = L.map(mapRef.current, {
+      center: [36.22, 133.31],
       zoom: 12,
       zoomControl: true,
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
+      maxZoom: 18,
     }).addTo(map);
 
-    mapRef.current = map;
+    leafletMapRef.current = map;
 
-    // cleanup
     return () => {
       map.remove();
-      mapRef.current = null;
+      leafletMapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const map = mapRef.current;
+    const map = leafletMapRef.current;
     if (!map) return;
 
-    // Clear existing markers
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current.clear();
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
 
-    properties.forEach((prop) => {
-      const rating = getRating(prop.id);
-      const isFav = rating.favorite;
-      const isSelected = prop.id === selectedId;
-
-      const color = prop.category === '空き地'
-        ? '#059669'
-        : isFav
-        ? '#e11d48'
-        : prop.negotiating
-        ? '#f59e0b'
-        : '#3b82f6';
-
-      const size = isSelected ? 16 : 10;
-      const border = isSelected ? 4 : 2;
-
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="
-          width: ${size}px;
-          height: ${size}px;
-          border-radius: 50%;
-          background: ${color};
-          border: ${border}px solid white;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-          cursor: pointer;
-          transition: all 0.2s;
-        "></div>`,
-        iconSize: [size + border * 2, size + border * 2],
-        iconAnchor: [(size + border * 2) / 2, (size + border * 2) / 2],
+    properties.forEach(property => {
+      const isFavorite = favorites[property.id];
+      const isNegotiating = property.isNegotiating;
+      const isLand = property.type === '空き地';
+      
+      let color = isLand ? '#22c55e' : '#3b82f6';
+      if (isNegotiating) color = '#f59e0b';
+      if (isFavorite) color = '#ef4444';
+      
+      const marker = L.circleMarker([property.lat, property.lng], {
+        radius: 10,
+        fillColor: color,
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
       });
 
-      const marker = L.marker([prop.lat, prop.lng], { icon })
-        .addTo(map)
-        .bindTooltip(
-          `<div style="font-size:12px;min-width:120px;">
-            <strong>${prop.listingId}</strong><br/>
-            ${prop.location} · ${prop.price}<br/>
-            ${prop.layout ? prop.layout + ' · ' : ''}${prop.category}
-            ${isFav ? ' ❤️' : ''}
-            ${prop.negotiating ? '<br/><span style="color:#f59e0b">商談中</span>' : ''}
-          </div>`,
-          { direction: 'top', offset: [0, -10] }
-        );
+      const priceStr = formatPrice(property.priceMan, language);
 
-      marker.on('click', () => onSelectProperty(prop.id));
-      markersRef.current.set(prop.id, marker);
+      marker.bindTooltip(`
+        <div class="text-sm">
+          <div class="font-bold">${property.listingCode}</div>
+          <div>${priceStr}</div>
+          <div>${translateLocation(property.location)}</div>
+          ${property.layout ? `<div>${property.layout}</div>` : ''}
+        </div>
+      `, { direction: 'top', offset: [0, -10] });
+
+      marker.on('click', () => {
+        onSelectProperty(property);
+      });
+
+      marker.addTo(map);
+      markersRef.current.push(marker);
     });
-  }, [properties, selectedId, onSelectProperty, getRating]);
+  }, [properties, favorites, onSelectProperty, language, translateLocation]);
 
   useEffect(() => {
-    if (selectedId && mapRef.current) {
-      const prop = properties.find((p) => p.id === selectedId);
-      if (prop) {
-        mapRef.current.flyTo([prop.lat, prop.lng], 14, { duration: 0.5 });
+    const map = leafletMapRef.current;
+    if (!map || !selectedProperty) return;
+
+    map.flyTo([selectedProperty.lat, selectedProperty.lng], 14, {
+      duration: 0.5,
+    });
+
+    markersRef.current.forEach((marker, index) => {
+      const property = properties[index];
+      if (property?.id === selectedProperty.id) {
+        marker.setStyle({ weight: 4, radius: 14 });
+      } else {
+        const isFavorite = favorites[property?.id];
+        const isNegotiating = property?.isNegotiating;
+        const isLand = property?.type === '空き地';
+        let color = isLand ? '#22c55e' : '#3b82f6';
+        if (isNegotiating) color = '#f59e0b';
+        if (isFavorite) color = '#ef4444';
+        marker.setStyle({ weight: 2, radius: 10, fillColor: color });
       }
-    }
-  }, [selectedId, properties]);
+    });
+  }, [selectedProperty, properties, favorites]);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full rounded-xl overflow-hidden"
-      style={{ minHeight: '300px' }}
+    <div 
+      ref={mapRef} 
+      className="w-full h-full min-h-[300px]"
+      style={{ zIndex: 1 }}
     />
   );
 }
