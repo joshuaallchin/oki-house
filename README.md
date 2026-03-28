@@ -67,10 +67,6 @@ A modern, bilingual (Japanese/English) web application for browsing vacant house
 
 ## 🚀 Deployment
 
-### GitHub Pages (recommended)
-
-The repo ships with a GitHub Actions workflow that builds and deploys automatically.
-
 **One-time setup:**
 
 1. Push the repo to GitHub.
