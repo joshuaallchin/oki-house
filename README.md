@@ -1,181 +1,186 @@
 # 🏠 Okinoshima House Hunter | 隠岐の島 家探し
 
-A modern, bilingual (Japanese/English) web application for browsing vacant houses and land listings from the Okinoshima Town Akiya Bank (空き家・空き地バンク).
+A modern, bilingual (Japanese/English) web application for browsing vacant house and land listings from the [Okinoshima Town Akiya Bank](https://www.town.okinoshima.shimane.jp/cgi-bin/recruit.php/1/list/?ck=1) (空き家・空き地バンク). Data is fetched live from the official town website on every visit.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![React](https://img.shields.io/badge/React-18-61dafb.svg)
+![React](https://img.shields.io/badge/React-19-61dafb.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-38bdf8.svg)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38bdf8.svg)
+![Deploy](https://img.shields.io/badge/deploy-GitHub_Pages-222.svg?logo=github)
+
+---
 
 ## ✨ Features
 
+### 🔴 Live Data
+- Fetches **all paginated pages** from the official Okinoshima town website on every load
+- Parses listings directly from the source HTML — no backend required
+- **1-hour localStorage cache** keeps repeat visits instant
+- Manual **Refresh** button in the header to force a re-fetch
+- Status badge: **Live** (green) · **Cached** (yellow) · **Sample** (grey fallback)
+
 ### 🗺️ Interactive Map View
-- Leaflet-powered interactive map centered on Okinoshima Island
-- Color-coded markers:
-  - 🔵 Blue: Vacant houses (空き家)
-  - 🟢 Green: Vacant land (空き地)
-  - 🟡 Amber: Under negotiation (商談中)
-  - 🔴 Red: Favorited properties
-- Click markers to view property details
-- Automatic zoom to selected property
+- Leaflet-powered map centred on Okinoshima Island
+- Color-coded circle markers:
+  - 🔵 Blue — Vacant house (空き家)
+  - 🟢 Green — Vacant land (空き地)
+  - 🟡 Amber — Under negotiation (商談中)
+  - 🔴 Red — Favourited property
+- Tooltip on hover: listing code, price, location, layout
+- Click a marker to open the detail panel
+- Fly-to animation when a property is selected from the list
 
-### 📋 List View
-- Responsive card layout
-- Property images with fallback placeholders
-- At-a-glance pricing (JPY and USD)
-- Property type badges
-- Favorite and rating indicators
+### 📋 List / Split View
+- Responsive card layout (1–4 columns depending on viewport)
+- Property images loaded from the official site with emoji fallback placeholders
+- Price shown in both **JPY** and **USD** (live exchange rate)
+- Type badge, availability badge, star rating and note count at a glance
+- "Show on Map" shortcut on every card
 
-### 🔍 Advanced Filtering & Sorting
-- Full-text search (ID, location, description)
-- Filter by property type (houses, land, all)
-- Filter by availability (available only, favorites only)
-- Price range slider
-- Sort by newest, price low-to-high, or price high-to-low
+### 🔍 Filtering & Sorting
+- Full-text search by ID, location or description
+- Property type filter: All · Houses · Land
+- Price ceiling slider
+- Availability filter (exclude properties under negotiation)
+- Favourites-only filter
+- Sort: Newest · Price low→high · Price high→low
 
-### 📝 Personal Property Tracking
-- ⭐ 5-star rating system
-- ❤️ Favorites list
-- 📝 Personal notes per property
-- Status tracking: Interested → Visited → Applied → Passed
-- All data persisted to localStorage
-
-### 🌐 Bilingual Support
-- Full Japanese and English translations
-- Location and district name translations
-- Property description translations
-- One-click language toggle
+### 📝 Personal Property Tracking *(all stored locally)*
+- ⭐ 1–5 star rating
+- ❤️ Favourites
+- 📝 Timestamped notes per property (add / edit / delete)
+- Status workflow: Not Set → Interested → Visited → Applied → Passed
+- Everything persisted to **localStorage** — survives page refreshes and redeploys
 
 ### 💱 Live Exchange Rates
-- Real-time USD/JPY exchange rate from Frankfurter API
-- Automatic rate caching (6-hour expiry)
-- Fallback rate when offline
-- Rate indicator in header
+- Fetches the current USD/JPY rate from [Frankfurter API](https://www.frankfurter.app/) (free, no key)
+- Displayed in the header: `💱 $1 = ¥XXX`
+- 6-hour cache so it isn't fetched on every single render
+- Graceful fallback to ¥150 if the API is unreachable
 
-### 🔄 Live Data Fetching
-- Fetches property listings directly from official Okinoshima Town website
-- Multi-page pagination support (all ~90 properties)
-- CORS proxy fallback chain for reliability
-- Local caching with 1-hour expiry
-- Fallback to sample data if fetching fails
+### 🌐 Bilingual (EN / JA)
+- Full UI translations for Japanese and English
+- Translated location names, district names and common description phrases
+- Language preference saved to localStorage
 
-## 🚀 Getting Started
+---
 
-### Prerequisites
-- Node.js 18+ 
-- npm 9+
+## 🚀 Deployment
 
-### Installation
+### GitHub Pages (recommended)
+
+The repo ships with a GitHub Actions workflow that builds and deploys automatically.
+
+**One-time setup:**
+
+1. Push the repo to GitHub.
+2. Go to **Settings → Pages → Source** and select **GitHub Actions**.
+3. Push to `main` (or trigger manually via **Actions → Deploy to GitHub Pages → Run workflow**).
+
+The workflow lives at `.github/workflows/deploy.yml`. Because the build uses `vite-plugin-singlefile`, the entire app is bundled into a **single `index.html`** with all JS and CSS inlined — no relative asset paths, no subpath configuration needed.
+
+> **Why `viteSingleFile`?**  
+> GitHub Pages serves from `https://user.github.io/repo-name/`. Normally Vite needs a `base` option set to the repo name or asset links break. `viteSingleFile` sidesteps the issue entirely by inlining everything — there are no external asset references to go wrong.
+
+> **Why is Leaflet CSS in `index.html` and not imported in the component?**  
+> Leaflet's CSS references binary PNG marker sprites via `url()`. `viteSingleFile` cannot inline binary assets, which caused a **white screen** on GitHub Pages. Loading the Leaflet stylesheet from the unpkg CDN instead solves this completely.
+
+### Local development
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/okinoshima-house-hunter.git
-cd okinoshima-house-hunter
-
-# Install dependencies
 npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
+npm run dev        # starts Vite dev server at http://localhost:5173
 ```
 
-### Environment
+### Build locally
 
-No environment variables required. The application uses:
-- Public CORS proxies for fetching data
-- Frankfurter API for exchange rates (no API key needed)
-- localStorage for user data persistence
+```bash
+npm run build      # outputs dist/index.html (single self-contained file)
+npm run preview    # serves the built file locally
+```
 
-## 📁 Project Structure
+---
+
+## 🗂️ Project Structure
 
 ```
 src/
 ├── components/
-│   ├── MapView.tsx        # Leaflet map component
-│   ├── PropertyCard.tsx   # Property list card
-│   └── PropertyDetail.tsx # Property detail modal
+│   ├── MapView.tsx          # Leaflet map with circle markers
+│   ├── PropertyCard.tsx     # Card used in list/split view
+│   └── PropertyDetail.tsx   # Modal with full property info + notes
 ├── data/
-│   └── properties.ts      # Property types & fallback data
+│   └── properties.ts        # Fallback sample data + Property type
 ├── hooks/
-│   ├── useNotes.ts        # Notes, favorites, ratings state
-│   └── useProperties.ts   # Property fetching & caching
+│   ├── useNotes.ts          # localStorage: notes, favourites, ratings, statuses
+│   └── useProperties.ts     # Orchestrates live fetch → cache → fallback
 ├── services/
-│   ├── scraper.ts         # HTML scraping logic
-│   └── exchangeRate.ts    # Exchange rate API
-├── i18n.tsx               # Internationalization
-└── App.tsx                # Main application
+│   ├── scraper.ts           # CORS-proxy HTML scraper + pagination
+│   └── exchangeRate.ts      # Frankfurter API wrapper with 6h cache
+├── i18n.tsx                 # Language context, translations, formatPrice
+├── App.tsx                  # Root layout, filters, view modes
+└── main.tsx                 # React entry point
+
+.github/
+└── workflows/
+    └── deploy.yml           # GitHub Pages CI/CD workflow
+
+index.html                   # Leaflet CSS CDN link lives here
 ```
-
-## 🛠️ Tech Stack
-
-| Technology | Purpose |
-|------------|---------|
-| [React 18](https://react.dev/) | UI framework |
-| [TypeScript](https://www.typescriptlang.org/) | Type safety |
-| [Vite](https://vitejs.dev/) | Build tool & dev server |
-| [Tailwind CSS](https://tailwindcss.com/) | Utility-first styling |
-| [Leaflet](https://leafletjs.com/) | Interactive maps |
-| [Frankfurter API](https://frankfurter.dev/) | Exchange rates |
-
-## 📊 Data Source
-
-Property data is scraped from the official [Okinoshima Town Akiya Bank](https://www.town.okinoshima.shimane.jp/www/contents/1530689936498/index.html) website. The scraper:
-
-1. Fetches listing pages via CORS proxy
-2. Parses HTML to extract property details
-3. Handles multi-page pagination
-4. Caches results locally for performance
-5. Falls back to sample data on failure
-
-### Data Fields Extracted
-- Property ID and listing code
-- Type (house/land/shop)
-- Transaction type (sale/rent)
-- Negotiation status
-- Location and district
-- Price
-- Layout (for houses)
-- Land area (for vacant land)
-- Description
-- Contact information
-- Images and PDF documents
-
-## 🌏 About Okinoshima
-
-[Okinoshima (隠岐の島)](https://en.wikipedia.org/wiki/Okinoshima,_Shimane) is the largest island in the Oki Islands chain, located in the Sea of Japan about 50km off the coast of Shimane Prefecture, Japan. The town operates an "Akiya Bank" (vacant house bank) program to connect vacant property owners with potential buyers or renters, promoting rural revitalization.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## ⚠️ Disclaimer
-
-This is an unofficial tool created for educational and personal use. It is not affiliated with or endorsed by Okinoshima Town (隠岐の島町). Property data is sourced from publicly available information on the official town website. Always verify property details directly with the town office or listed contacts before making any decisions.
-
-## 🙏 Acknowledgments
-
-- [Okinoshima Town](https://www.town.okinoshima.shimane.jp/) for the public property listings
-- [OpenStreetMap](https://www.openstreetmap.org/) contributors for map tiles
-- [Frankfurter](https://frankfurter.dev/) for free exchange rate API
-- [AllOrigins](https://allorigins.win/) and other CORS proxy providers
 
 ---
 
-<p align="center">
-  Made with ❤️ for anyone looking to find their dream home on Okinoshima Island
-  <br>
-  隠岐の島での理想の家探しを応援しています
-</p>
+## 🌐 Data Sources
+
+| Source | Purpose |
+|---|---|
+| [Okinoshima Town Akiya Bank](https://www.town.okinoshima.shimane.jp/cgi-bin/recruit.php/1/list/?ck=1) | Property listings (HTML scrape via CORS proxy) |
+| [allorigins.win](https://allorigins.win) | Primary CORS proxy |
+| [corsproxy.io](https://corsproxy.io) | Secondary CORS proxy |
+| [Frankfurter API](https://www.frankfurter.app/) | Live USD/JPY exchange rate |
+| [OpenStreetMap](https://www.openstreetmap.org/) | Map tiles via Leaflet |
+
+### How the scraper works
+
+1. Fetches `https://www.town.okinoshima.shimane.jp/cgi-bin/recruit.php/1/list/?ck=1` through a CORS proxy
+2. Parses property IDs, listing codes, prices, types, districts, locations, images, PDFs and descriptions from the HTML
+3. Paginates automatically (`&page=2`, `&page=3`, …) until a page returns fewer than 20 results
+4. Caches the full result in `localStorage` for 1 hour
+5. Falls back to hardcoded sample data if all proxies fail
+
+### localStorage keys
+
+| Key | TTL | Contents |
+|---|---|---|
+| `okinoshima-properties-cache` | 1 hour | Scraped property array + timestamp |
+| `okinoshima-exchange-rate` | 6 hours | USD/JPY rate + timestamp |
+| `okinoshima-notes` | Permanent | Per-property notes |
+| `okinoshima-favorites` | Permanent | Favourite property IDs |
+| `okinoshima-ratings` | Permanent | Per-property star ratings |
+| `okinoshima-statuses` | Permanent | Per-property status |
+| `okinoshima-language` | Permanent | UI language preference |
+
+> **Does localStorage work on GitHub Pages?**  
+> Yes. localStorage is entirely browser-side and has nothing to do with the hosting provider. Your notes, favourites and cached data persist across page reloads and even across new deployments.
+
+---
+
+## ⚠️ Disclaimer
+
+This project is an independent tool built to make the official Okinoshima akiya bank more accessible. It is not affiliated with, endorsed by, or maintained by Okinoshima Town (隠岐の島町). All property data belongs to the town and the respective listing agents. Always verify details on the [official website](https://www.town.okinoshima.shimane.jp/cgi-bin/recruit.php/1/list/?ck=1) before making any decisions.
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## 🙏 Acknowledgements
+
+- [Okinoshima Town (隠岐の島町)](https://www.town.okinoshima.shimane.jp/) for maintaining the public akiya bank
+- [Leaflet](https://leafletjs.com/) for the mapping library
+- [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) for map tiles
+- [Frankfurter](https://www.frankfurter.app/) for the free exchange rate API
+- [allorigins.win](https://allorigins.win) & [corsproxy.io](https://corsproxy.io) for CORS proxy services
