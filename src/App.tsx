@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { properties, Property } from './data/properties';
+import { Property } from './data/properties';
+import { useProperties } from './hooks/useProperties';
 import { useNotes } from './hooks/useNotes';
-import { LanguageProvider, useLanguage, formatPrice } from './i18n';
+import { LanguageProvider, useLanguage, formatPrice, getExchangeRateInfo, subscribeToExchangeRate } from './i18n';
 import MapView from './components/MapView';
 import PropertyCard from './components/PropertyCard';
 import PropertyDetail from './components/PropertyDetail';
@@ -12,6 +13,15 @@ type FilterType = 'all' | '空き家' | '空き地';
 
 function AppContent() {
   const { t, language, setLanguage } = useLanguage();
+  const { 
+    properties, 
+    isLoading, 
+    error, 
+    lastUpdated, 
+    dataSource, 
+    refresh 
+  } = useProperties();
+  
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [detailProperty, setDetailProperty] = useState<Property | null>(null);
@@ -22,6 +32,16 @@ function AppContent() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [availableOnly, setAvailableOnly] = useState(false);
   const [mobileShowMap, setMobileShowMap] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(() => getExchangeRateInfo());
+
+  // Subscribe to exchange rate updates
+  useEffect(() => {
+    const unsubscribe = subscribeToExchangeRate(() => {
+      setExchangeRate(getExchangeRateInfo());
+    });
+    return unsubscribe;
+  }, []);
   
   const { 
     notesMap, 
@@ -36,6 +56,16 @@ function AppContent() {
     statuses,
     setStatus,
   } = useNotes();
+
+  // Handle refresh
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Filter and sort properties
   const filteredProperties = useMemo(() => {
@@ -77,7 +107,7 @@ function AppContent() {
     });
     
     return result;
-  }, [searchQuery, filterType, sortOption, maxPrice, favoritesOnly, availableOnly, favorites]);
+  }, [properties, searchQuery, filterType, sortOption, maxPrice, favoritesOnly, availableOnly, favorites]);
 
   // Close detail when clicking outside on mobile
   useEffect(() => {
@@ -111,6 +141,44 @@ function AppContent() {
     setDetailProperty(property);
   }, []);
 
+  // Format last updated time
+  const formatLastUpdated = (dateStr: string | null) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return date.toLocaleString(language === 'ja' ? 'ja-JP' : 'en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  // Data source badge
+  const getDataSourceBadge = () => {
+    switch (dataSource) {
+      case 'live':
+        return { 
+          text: language === 'ja' ? 'ライブ' : 'Live', 
+          color: 'bg-green-500',
+          tooltip: language === 'ja' ? '公式サイトから取得' : 'Fetched from official site'
+        };
+      case 'cached':
+        return { 
+          text: language === 'ja' ? 'キャッシュ' : 'Cached', 
+          color: 'bg-yellow-500',
+          tooltip: language === 'ja' ? '保存されたデータを表示中' : 'Showing saved data'
+        };
+      case 'fallback':
+        return { 
+          text: language === 'ja' ? 'サンプル' : 'Sample', 
+          color: 'bg-gray-500',
+          tooltip: language === 'ja' ? 'サンプルデータを表示中。更新ボタンで最新データを取得できます。' : 'Showing sample data. Click refresh to try fetching latest.'
+        };
+    }
+  };
+
+  const sourceBadge = getDataSourceBadge();
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
@@ -122,6 +190,22 @@ function AppContent() {
               <p className="text-blue-100 text-xs sm:text-sm">{t('appSubtitle')}</p>
             </div>
             <div className="flex items-center gap-2">
+              {/* Refresh button */}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing || isLoading}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                title={language === 'ja' ? '最新データを取得' : 'Refresh data'}
+              >
+                <span className={isRefreshing ? 'animate-spin' : ''}>🔄</span>
+                <span className="hidden sm:inline">
+                  {isRefreshing 
+                    ? (language === 'ja' ? '更新中...' : 'Refreshing...') 
+                    : (language === 'ja' ? '更新' : 'Refresh')
+                  }
+                </span>
+              </button>
+              
               {/* Language Toggle */}
               <button
                 onClick={() => setLanguage(language === 'ja' ? 'en' : 'ja')}
@@ -158,6 +242,46 @@ function AppContent() {
                 </button>
               </div>
             </div>
+          </div>
+          
+          {/* Data source indicator */}
+          <div className="mt-2 flex items-center gap-2 text-xs text-blue-100">
+            <span 
+              className={`px-2 py-0.5 rounded-full text-white cursor-help ${sourceBadge.color}`}
+              title={sourceBadge.tooltip}
+            >
+              {sourceBadge.text}
+            </span>
+            {lastUpdated && (
+              <span>
+                {language === 'ja' ? '最終更新: ' : 'Last updated: '}
+                {formatLastUpdated(lastUpdated)}
+              </span>
+            )}
+            <span 
+              className="hidden sm:inline-flex items-center gap-1 cursor-help"
+              title={exchangeRate.isLive 
+                ? (language === 'ja' ? 'リアルタイム為替レート' : 'Live exchange rate')
+                : (language === 'ja' ? 'オフラインレート' : 'Offline rate')
+              }
+            >
+              💱 $1 = ¥{exchangeRate.rate.toFixed(0)}
+              {exchangeRate.isLive && <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>}
+            </span>
+            {error && (
+              <span className="text-yellow-200 flex items-center gap-2">
+                <span className="max-w-xs truncate" title={error}>
+                  ⚠️ {error.length > 50 ? error.substring(0, 50) + '...' : error}
+                </span>
+                <button 
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="underline hover:no-underline text-white/80 hover:text-white"
+                >
+                  {language === 'ja' ? '再試行' : 'Retry'}
+                </button>
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -249,13 +373,37 @@ function AppContent() {
           
           {/* Results count */}
           <div className="mt-2 text-sm text-gray-600">
-            {t('showing')} {filteredProperties.length} {t('of')} {properties.length} {t('properties')}
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <span className="animate-spin">⏳</span>
+                {language === 'ja' ? '読み込み中...' : 'Loading...'}
+              </span>
+            ) : (
+              <>
+                {t('showing')} {filteredProperties.length} {t('of')} {properties.length} {t('properties')}
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col sm:flex-row min-h-0">
+        {/* Loading overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-50">
+            <div className="text-center">
+              <div className="text-4xl animate-bounce mb-4">🏠</div>
+              <div className="text-lg font-medium text-gray-700">
+                {language === 'ja' ? '物件データを取得中...' : 'Fetching property data...'}
+              </div>
+              <div className="text-sm text-gray-500 mt-2">
+                {language === 'ja' ? '全ページを読み込んでいます' : 'Loading all pages from official site'}
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* Map view */}
         {(viewMode === 'split' || viewMode === 'map') && (
           <div className={`${
@@ -328,7 +476,7 @@ function AppContent() {
                 />
               ))}
               
-              {filteredProperties.length === 0 && (
+              {!isLoading && filteredProperties.length === 0 && (
                 <div className="col-span-full text-center py-12 text-gray-500">
                   <div className="text-4xl mb-2">🏠</div>
                   <p>{language === 'ja' ? '条件に合う物件が見つかりませんでした' : 'No properties match your filters'}</p>

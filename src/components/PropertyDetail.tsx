@@ -41,7 +41,6 @@ export default function PropertyDetail({
   const isShop = property.type === '空き家・店舗付き';
   const isLand = property.type === '空き地';
   const detailUrl = getDetailUrl(property.id);
-  // PDF URL is directly stored in the property data
   const pdfUrl = property.pdfUrl;
 
   const handleAddNote = () => {
@@ -79,19 +78,26 @@ export default function PropertyDetail({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header image area */}
-        <div className="relative h-56 bg-gray-200">
-          <img
-            src={property.imageUrl}
-            alt={`${property.listingCode} - ${property.location}`}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-              target.parentElement!.style.background = isLand
-                ? 'linear-gradient(135deg, #bbf7d0, #4ade80)'
-                : 'linear-gradient(135deg, #bfdbfe, #60a5fa)';
-            }}
-          />
+        <div className={`relative h-56 flex items-center justify-center ${
+          isLand 
+            ? 'bg-gradient-to-br from-green-200 to-green-300' 
+            : 'bg-gradient-to-br from-blue-200 to-blue-300'
+        }`}>
+          {property.imageUrl && property.imageUrl.includes('.') ? (
+            <img
+              src={property.imageUrl}
+              alt={`${property.listingCode} - ${property.location}`}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+              }}
+            />
+          ) : (
+            <span className="text-8xl opacity-40">{isLand ? '🌳' : '🏠'}</span>
+          )}
+          {/* Fallback icon shown behind image */}
+          <span className="absolute text-8xl opacity-20 -z-10">{isLand ? '🌳' : '🏠'}</span>
           
           {/* Close button */}
           <button

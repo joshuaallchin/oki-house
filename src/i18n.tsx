@@ -1,13 +1,50 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { fetchExchangeRate, getCurrentRate, isRateLive, getRateAge } from './services/exchangeRate';
 
 export type Language = 'ja' | 'en';
 
-// Exchange rate: approximately 150 JPY = 1 USD (as of 2024)
-const JPY_TO_USD_RATE = 150;
+// Default fallback rate
+const DEFAULT_RATE = 150;
 
-export function formatPrice(priceInManYen: number, language: Language): string {
+// Dynamic exchange rate state
+let currentExchangeRate = getCurrentRate() || DEFAULT_RATE;
+let exchangeRateListeners: ((rate: number) => void)[] = [];
+
+// Initialize exchange rate on module load
+fetchExchangeRate().then(rate => {
+  currentExchangeRate = rate;
+  exchangeRateListeners.forEach(listener => listener(rate));
+});
+
+// Subscribe to rate updates
+export function subscribeToExchangeRate(listener: (rate: number) => void): () => void {
+  exchangeRateListeners.push(listener);
+  return () => {
+    exchangeRateListeners = exchangeRateListeners.filter(l => l !== listener);
+  };
+}
+
+// Refresh exchange rate
+export async function refreshExchangeRate(): Promise<number> {
+  const rate = await fetchExchangeRate();
+  currentExchangeRate = rate;
+  exchangeRateListeners.forEach(listener => listener(rate));
+  return rate;
+}
+
+// Get exchange rate info for display
+export function getExchangeRateInfo(): { rate: number; isLive: boolean; ageMinutes: number | null } {
+  return {
+    rate: currentExchangeRate,
+    isLive: isRateLive(),
+    ageMinutes: getRateAge(),
+  };
+}
+
+export function formatPrice(priceInManYen: number, language: Language, exchangeRate?: number): string {
+  const rate = exchangeRate ?? currentExchangeRate;
   const yenAmount = priceInManYen * 10000;
-  const usdAmount = Math.round(yenAmount / JPY_TO_USD_RATE);
+  const usdAmount = Math.round(yenAmount / rate);
   
   if (language === 'ja') {
     return `${priceInManYen.toLocaleString()}万円 ($${usdAmount.toLocaleString()})`;
@@ -16,8 +53,9 @@ export function formatPrice(priceInManYen: number, language: Language): string {
   }
 }
 
-export function formatRentPrice(monthlyRent: number, language: Language): string {
-  const usdAmount = Math.round((monthlyRent * 10000) / JPY_TO_USD_RATE);
+export function formatRentPrice(monthlyRent: number, language: Language, exchangeRate?: number): string {
+  const rate = exchangeRate ?? currentExchangeRate;
+  const usdAmount = Math.round((monthlyRent * 10000) / rate);
   
   if (language === 'ja') {
     return `${monthlyRent}万円/月 ($${usdAmount.toLocaleString()}/mo)`;

@@ -34,19 +34,26 @@ export default function PropertyCard({
       }`}
     >
       {/* Property Image */}
-      <div className="relative h-36 bg-gray-200">
-        <img
-          src={property.imageUrl}
-          alt={`${property.listingCode} - ${property.location}`}
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            target.parentElement!.style.background = isLand
-              ? 'linear-gradient(135deg, #bbf7d0, #86efac)'
-              : 'linear-gradient(135deg, #bfdbfe, #93c5fd)';
-          }}
-        />
+      <div className={`relative h-36 flex items-center justify-center ${
+        isLand 
+          ? 'bg-gradient-to-br from-green-100 to-green-200' 
+          : 'bg-gradient-to-br from-blue-100 to-blue-200'
+      }`}>
+        {property.imageUrl && property.imageUrl.includes('.') ? (
+          <img
+            src={property.imageUrl}
+            alt={`${property.listingCode} - ${property.location}`}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
+          />
+        ) : (
+          <span className="text-5xl opacity-50">{isLand ? '🌳' : '🏠'}</span>
+        )}
+        {/* Fallback icon shown behind image */}
+        <span className="absolute text-5xl opacity-30 -z-10">{isLand ? '🌳' : '🏠'}</span>
         
         {/* Price badge */}
         <div className="absolute top-2 left-2 bg-blue-600 text-white px-2 py-1 rounded text-sm font-bold shadow">
