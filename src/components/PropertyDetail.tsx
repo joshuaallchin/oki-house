@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Property, getDetailUrl } from '../data/properties';
 import { Note } from '../hooks/useNotes';
 import { useLanguage, formatPrice } from '../i18n';
+import { fetchPdfUrl } from '../services/scraper';
 
 interface Props {
   property: Property;
@@ -36,12 +37,23 @@ export default function PropertyDetail({
   const [newNote, setNewNote] = useState('');
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(true);
 
   const priceText = formatPrice(property.priceMan, language);
   const isShop = property.type === '空き家・店舗付き';
   const isLand = property.type === '空き地';
   const detailUrl = getDetailUrl(property.id);
-  const pdfUrl = property.pdfUrl;
+
+  // Lazily fetch the real PDF URL from the detail page when modal opens
+  useEffect(() => {
+    setPdfUrl(null);
+    setPdfLoading(true);
+    fetchPdfUrl(property.id).then((url) => {
+      setPdfUrl(url);
+      setPdfLoading(false);
+    });
+  }, [property.id]);
 
   const handleAddNote = () => {
     if (newNote.trim()) {
@@ -241,14 +253,24 @@ export default function PropertyDetail({
             >
               🔗 {t('viewOnSite')}
             </a>
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
-            >
-              📄 {t('viewPDF')}
-            </a>
+            {pdfLoading ? (
+              <button
+                disabled
+                className="flex items-center gap-2 px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+              >
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                {language === 'ja' ? 'PDF読込中...' : 'Loading PDF...'}
+              </button>
+            ) : pdfUrl ? (
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+              >
+                📄 {t('viewPDF')}
+              </a>
+            ) : null}
           </div>
           
           {/* Notes section */}

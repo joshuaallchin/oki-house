@@ -443,3 +443,45 @@ export function setCachedProperties(data: CachedData): void {
     console.warn('Failed to cache properties:', error);
   }
 }
+
+// PDF URL cache so we don't re-fetch the same detail page
+const pdfCache: Record<number, string> = {};
+
+/**
+ * Lazily fetch the real PDF URL for a property by scraping its detail page.
+ * Results are cached in memory for the session.
+ */
+export async function fetchPdfUrl(propertyId: number): Promise<string> {
+  if (pdfCache[propertyId]) return pdfCache[propertyId];
+
+  const detailUrl = `${BASE_URL}/cgi-bin/recruit.php/1/detail/${propertyId}?ck=1`;
+
+  try {
+    const html = await fetchWithProxy(detailUrl);
+
+    // The PDF link looks like:
+    // href="//www.town.okinoshima.shimane.jp/material/recruit/1/ID/TIMESTAMP.pdf"
+    const patterns = [
+      /href="(\/\/www\.town\.okinoshima\.shimane\.jp\/material\/recruit\/1\/\d+\/[^"]+\.pdf)"/i,
+      /href="(https:\/\/www\.town\.okinoshima\.shimane\.jp\/material\/recruit\/1\/\d+\/[^"]+\.pdf)"/i,
+      /href="(\/material\/recruit\/1\/\d+\/[^"]+\.pdf)"/i,
+    ];
+
+    for (const pattern of patterns) {
+      const m = html.match(pattern);
+      if (m) {
+        let url = m[1];
+        if (url.startsWith('//')) url = 'https:' + url;
+        else if (url.startsWith('/material')) url = BASE_URL + url;
+        pdfCache[propertyId] = url;
+        console.log(`PDF for ${propertyId}: ${url}`);
+        return url;
+      }
+    }
+  } catch (e) {
+    console.warn(`Could not fetch detail page for property ${propertyId}:`, e);
+  }
+
+  // Fall back to the detail page itself so the user can find the PDF link
+  return detailUrl;
+}
